@@ -7,6 +7,7 @@ import logging
 import argparse
 import os
 import html
+from pathlib import Path
 
 import aiohttp
 import datetime
@@ -487,6 +488,106 @@ class AppFolioIntegration(Integration):
             },
             "source": "appfolio_email_table",
         }
+
+    async def fetch_email_attachments(self, email_id: str) -> list[dict]:
+        """Fetch attachment metadata from an individual AppFolio email page."""
+        response = await self._make_request(
+            "GET",
+            f"{self.url}/emails/{email_id}",
+            headers={
+                "accept": "application/json, text/javascript, text/html, */*; q=0.01",
+                "x-requested-with": "XMLHttpRequest",
+                "cookie": self.cookie_string,
+            },
+            max_line_size=8190 * 15,
+            max_field_size=8190 * 15,
+        )
+        return self._parse_email_attachments(response)
+
+    def _parse_email_attachments(self, response: str) -> list[dict]:
+        """Parse attachment links from AppFolio email-detail JSON or HTML."""
+        try:
+            payload = json.loads(response)
+        except (json.JSONDecodeError, TypeError):
+            payload = None
+
+        candidates = []
+        if isinstance(payload, dict):
+            for item in payload.get("attachment_links") or []:
+                if isinstance(item, dict):
+                    candidates.append((item.get("name", ""), item.get("link", "")))
+            # Older responses may only provide anchor tags in attachment_url.
+            for anchor_html in payload.get("attachment_url") or []:
+                anchor = BeautifulSoup(anchor_html, "html.parser").select_one("a[href]")
+                if anchor:
+                    candidates.append((anchor.get_text(" ", strip=True), anchor["href"]))
+        else:
+            soup = BeautifulSoup(response, "html.parser")
+            for link in soup.select(
+                'p.js-show-email-attachment a[href*="/attachments/"], '
+                'a[href^="/attachments/"]'
+            ):
+                candidates.append((link.get_text(" ", strip=True), link.get("href", "")))
+
+        attachments = []
+        seen = set()
+        for filename, raw_href in candidates:
+            href = html.unescape(raw_href or "")
+            match = re.search(r"/attachments/(\d+)", href)
+            key = (match.group(1) if match else href, filename)
+            if not href or key in seen:
+                continue
+            seen.add(key)
+            item = {
+                "id": match.group(1) if match else None,
+                "filename": filename,
+                "href": href,
+                "url": urllib.parse.urljoin(f"{self.url}/", href),
+            }
+            attachments.append(item)
+        return attachments
+
+    async def download_email_attachment(
+        self, attachment: dict, output_directory: str | Path
+    ) -> str:
+        """Download one attachment and return its local path."""
+        output_directory = Path(output_directory)
+        output_directory.mkdir(parents=True, exist_ok=True)
+        filename = Path(attachment.get("filename") or "attachment").name
+        if attachment.get("id"):
+            filename = f"{attachment['id']}_{filename}"
+        output_path = output_directory / filename
+
+        headers = {"cookie": self.cookie_string, "accept": "*/*"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                attachment["url"], headers=headers, allow_redirects=True
+            ) as response:
+                if not response.ok:
+                    raise IntegrationAPIError(
+                        self.integration_name,
+                        f"Attachment download failed: HTTP {response.status}",
+                        response.status,
+                    )
+                output_path.write_bytes(await response.read())
+        return str(output_path.resolve())
+
+    async def add_email_attachments(
+        self, result: dict, download_directory: str | Path | None = None
+    ) -> dict:
+        """Add attachment metadata (and optional local files) to parsed emails."""
+        for email_record in result.get("emails", []):
+            if not email_record.get("has_attachment") or not email_record.get("id"):
+                email_record["attachments"] = []
+                continue
+            attachments = await self.fetch_email_attachments(email_record["id"])
+            if download_directory is not None:
+                for attachment in attachments:
+                    attachment["local_path"] = await self.download_email_attachment(
+                        attachment, download_directory
+                    )
+            email_record["attachments"] = attachments
+        return result
 
     async def fetch_all_tenants(self, page: int = 1):
         url = f"{self.url}/occupancies"
@@ -2357,6 +2458,13 @@ async def _run_cli(args):
             items_per_page=args.items_per_page,
             omit_bodies=not args.include_bodies,
         )
+        if args.attachments or args.download_attachments:
+            result = await integration.add_email_attachments(
+                result,
+                download_directory=(
+                    args.attachment_dir if args.download_attachments else None
+                ),
+            )
     else:
         raise ValueError(f"Unknown command: {args.command}")
 
@@ -2389,6 +2497,18 @@ def _build_cli_parser():
     emails.add_argument("--page", type=int, default=1)
     emails.add_argument("--items-per-page", type=int, default=10)
     emails.add_argument("--include-bodies", action="store_true")
+    emails.add_argument(
+        "--attachments", action="store_true",
+        help="Fetch attachment names and URLs from each email detail page",
+    )
+    emails.add_argument(
+        "--download-attachments", action="store_true",
+        help="Download attachments as well as returning their metadata",
+    )
+    emails.add_argument(
+        "--attachment-dir", default="email_attachments",
+        help="Download directory (default: email_attachments)",
+    )
     return parser
 
 

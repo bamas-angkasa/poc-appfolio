@@ -1,0 +1,5 @@
+Property ID,Property Name,Property Address,Unit ID,Unit Name,Tenant ID,Tenant Name,Tenant Email,Tenant Phone,Lease ID,Lease Start,Lease End,Lease Status,Balance,Property Manager ID,Property Manager
+prop-100,Oak Court,100 Oak Ave,unit-101,1A,tenant-1001,Ada Tenant,ada@example.test,555-0101,lease-2001,2026-01-01,2026-12-31,Current,125.50,manager-1,Pat Manager
+prop-100,Oak Court,100 Oak Ave,unit-102,1B,tenant-1002,Lin Tenant,lin@example.test,555-0102,lease-2002,2026-02-01,2027-01-31,Current,0,manager-1,Pat Manager
+prop-200,Pine Place,200 Pine St,unit-201,2A,tenant-1003,Sam Tenant,sam@example.test,555-0103,lease-2003,2026-03-01,2027-02-28,Current,75,manager-2,Morgan Manager
+

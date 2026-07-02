@@ -1,0 +1,7 @@
+{
+  "results": [
+    {"owner_id":"owner-1","owner_name":"Example Oak LLC","owner_email":"oak@example.test","property_id":"prop-100","property_name":"Oak Court","ownership_percent":100},
+    {"owner_id":"owner-2","owner_name":"Example Pine LLC","owner_email":"pine@example.test","property_id":"prop-200","property_name":"Pine Place","ownership_percent":100}
+  ]
+}
+
