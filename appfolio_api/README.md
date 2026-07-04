@@ -36,7 +36,7 @@ Upload CSV/JSON using `POST /api/imports/file` (`report_type` plus `file`). AppF
 
 For example, `POST /api/imports/appfolio/owner_property/standard/owner_directory` calls AppFolio's standard owner-directory report. It can only be normalized if its selected columns contain both Owner ID and Property ID; names and `properties_owned` text alone are not safe relational identifiers. Both report forms follow `next_page_url`. Credentials are read only from environment variables and are never logged or committed.
 
-The AppFolio client requests ten records per page and sends `Accept: application/json` and `Content-Type: application/json`, matching AppFolio's documented curl shape. Pagination still imports the entire report.
+The AppFolio client invokes standard reports with `POST` JSON and saved reports with `GET`. It follows `next_page_url` with `GET`; those cached pagination URLs are short-lived. Page size is capped at 5,000 and pagination remains enabled.
 
 Retrieve combined context at `GET /api/tenants/{tenantId}/context` and check referential integrity at `GET /api/validation/links`.
 
