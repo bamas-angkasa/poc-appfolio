@@ -12,7 +12,9 @@ class AppFolioReportClient:
         if not report_name.replace("_", "").replace("-", "").isalnum():
             raise ValueError("Invalid standard report name")
         url = urljoin(self.base_url, f"api/v2/reports/{report_name}.json")
-        async for page in self._iter_url(url, limit, method="POST"):
+        async for page in self._iter_url(
+            url, limit, method="POST", pagination_method="POST"
+        ):
             yield page
 
     async def iter_saved_report(self, saved_report_id: str, limit: int = 10):
@@ -22,8 +24,15 @@ class AppFolioReportClient:
         async for page in self._iter_url(url, limit):
             yield page
 
-    async def _iter_url(self, url: str, limit: int, method: str = "GET"):
-        payload = {"limit": min(limit, 5000), "paginate_results": True}
+    async def _iter_url(
+        self,
+        url: str,
+        limit: int,
+        method: str = "GET",
+        pagination_method: str = "GET",
+    ):
+        params = {"limit": min(limit, 5000)}
+        payload = {"paginate_results": True}
         seen_urls: set[str] = set()
         headers = {
             "Accept": "application/json",
@@ -41,7 +50,7 @@ class AppFolioReportClient:
                 if method == "POST":
                     response = await client.post(url, json=payload)
                 else:
-                    response = await client.get(url)
+                    response = await client.get(url, params=params)
                 try:
                     response.raise_for_status()
                 except httpx.HTTPStatusError as exc:
@@ -58,7 +67,9 @@ class AppFolioReportClient:
                 yield results
                 next_page = payload.get("next_page_url")
                 url = urljoin(self.base_url, next_page.lstrip("/")) if next_page else ""
-                method = "GET"
+                method = pagination_method
+                params = None
+                payload = {} if method == "POST" else None
 
     # Backward-compatible alias used by earlier callers.
     async def iter_report(self, saved_report_id: str, limit: int = 10):
